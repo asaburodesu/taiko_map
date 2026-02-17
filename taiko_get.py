@@ -72,7 +72,7 @@ with open('data.json', 'w', encoding='utf-8', errors='ignore') as f:
     }
 
     for area_code in range(1, 48):
-        url = f'https://bandainamco-am.co.jp/am/vg/idolmaster-tours/location/list?area=JP-{str(area_code).zfill(2)}'
+        url = f'https://essential-truth-92204.appspot.com/S12/list?area=JP-{str(area_code).zfill(2)}'
         print(f"スクレイピング中: {url}")
         
         try:
@@ -93,7 +93,7 @@ with open('data.json', 'w', encoding='utf-8', errors='ignore') as f:
                         count = dd_elements[i + 1].text.strip() if i + 1 < len(dd_elements) and dd_elements[i + 1].get("class") == ["count"] else ""
                         detail_url = dt_elements[i // 2].find("a")["href"] if dt_elements[i // 2].find("a") else ""
                         if detail_url.startswith("./detail"):
-                            detail_url = f"https://bandainamco-am.co.jp/am/vg/idolmaster-tours/location{detail_url[1:]}"
+                            detail_url = f"https://essential-truth-92204.appspot.com/S12{detail_url[1:]}"
                         spot_dict[name] = {
                             "address": address,
                             "count": count,
@@ -186,3 +186,4 @@ with open('data.json', 'w', encoding='utf-8', errors='ignore') as f:
     final_json_string = json.dumps(base_json_dict, indent=4, ensure_ascii=False)
     print(final_json_string)
     f.write(final_json_string)
+
