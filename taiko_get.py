@@ -6,6 +6,13 @@ import re
 import json
 import time
 
+# 対象サイトへのアクセス用。ラズパイ上で 200 OK を確認したヘッダー。
+SCRAPING_HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "text/html,application/xhtml+xml",
+    "Accept-Language": "ja-JP,ja;q=0.9",
+}
+
 def is_zero_coords(lat, lng):
     """座標が0.0,0.0かどうかを判定する"""
     try:
@@ -72,7 +79,7 @@ def fix_json_string(json_str):
 # 詳細ページから緯度・経度を取得する関数
 def get_lat_lng_from_detail_page(detail_url):
     try:
-        res = requests.get(detail_url)
+        res = requests.get(detail_url, headers=SCRAPING_HEADERS, timeout=15)
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
         script_tags = soup.find_all("script")
@@ -113,11 +120,11 @@ with open('data.json', 'w', encoding='utf-8', errors='ignore') as f:
     }
 
     for area_code in range(1, 48):
-        url = f'https://essential-truth-92204.appspot.com/S12/list?area=JP-{str(area_code).zfill(2)}'
+        url = f'https://bandainamco-am.co.jp/am/vg/idolmaster-tours/location/list?area=JP-{str(area_code).zfill(2)}'
         print(f"スクレイピング中: {url}")
-        
+
         try:
-            res = requests.get(url)
+            res = requests.get(url, headers=SCRAPING_HEADERS, timeout=15)
             res.raise_for_status()
             soup = BeautifulSoup(res.text, "html.parser")
             prefecture = soup.find("h1").text.strip() if soup.find("h1") else "不明"
@@ -134,7 +141,7 @@ with open('data.json', 'w', encoding='utf-8', errors='ignore') as f:
                         count = dd_elements[i + 1].text.strip() if i + 1 < len(dd_elements) and dd_elements[i + 1].get("class") == ["count"] else ""
                         detail_url = dt_elements[i // 2].find("a")["href"] if dt_elements[i // 2].find("a") else ""
                         if detail_url.startswith("./detail"):
-                            detail_url = f"https://essential-truth-92204.appspot.com/S12{detail_url[1:]}"
+                            detail_url = f"https://bandainamco-am.co.jp/am/vg/idolmaster-tours/location{detail_url[1:]}"
                         spot_dict[name] = {
                             "address": address,
                             "count": count,
@@ -234,8 +241,6 @@ with open('data.json', 'w', encoding='utf-8', errors='ignore') as f:
             continue
 
         time.sleep(1)
-
     final_json_string = json.dumps(base_json_dict, indent=4, ensure_ascii=False)
     print(final_json_string)
     f.write(final_json_string)
-
