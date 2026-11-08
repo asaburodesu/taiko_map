@@ -1,18 +1,15 @@
 # This workflow will do a clean install of node dependencies, build the source code and run tests across different versions of node
 # For more information see: https://help.github.com/actions/language-and-framework-guides/using-nodejs-with-github-actions
-
 name: build
 
 on:
   push:
     branches:
       - 'master'
-
   workflow_dispatch:
-
   schedule:
-    - cron:  '20 22 * * *'
-    # 毎日7時20分(JST)に実行
+    # 毎日7時20分(JST)に実行 (cronはUTC)
+    - cron: '20 22 * * *'
 
 permissions:
   contents: write
@@ -23,54 +20,91 @@ jobs:
   ubuntu:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-node@v1
-      with:
-        node-version: 16.x
+      - uses: actions/checkout@v2
 
-    - name: Install dependencies
-      run: pip install -r requirements.txt
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 16.x
 
-    - name: Run Python
-      run: python taiko_get.py
-      
-    - name: Set Last Update
-      id: set_last_update
-      run: |
-        last_update=$(python update.py)
-        echo "LAST_UPDATE=${last_update}" >> $GITHUB_ENV
-      shell: bash
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-    - name: Use Last Update
-      run: |
-        echo "Last Update: $LAST_UPDATE"
+      # GitHub-hosted runnerをTailscaleへ接続
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
 
-    - name: Move data.json to public directory
-      run: |
-        mv data.json public/
-        mv src/last_update.json public/
-        
-    - name: Commit changes
-      run: |
-        git config --global user.name "${GITHUB_ACTOR}"
-        git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
-        git pull
-        # 変更があるか確認
-        if git diff --quiet; then
-          echo "No changes to commit."
-        else
-          git add public/data.json
-          git commit -m "データを更新 ($LAST_UPDATE)"
-          git push origin master
-        fi
+      # 通信の出口を変更
+      - name: Use Raspberry Pi as exit node
+        env:
+          PI_IP: ${{ vars.PI_TAILSCALE_IP }}
+        run: |
+          test -n "$PI_IP"
+          sudo tailscale set --exit-node="$PI_IP"
+          # ルートの疎通だけ確認
+          curl -4fsS --max-time 15 https://api.ipify.org > /dev/null
 
-    - run: npm install
+      - name: Run Python via Japan IP
+        run: python taiko_get.py
 
-    - run: npm run build -repository=${GITHUB_REPOSITORY}
+      # この後のgit / npm / deploy通信はラズパイ経由にしない
+      # Pythonが失敗してもルート設定を元に戻す
+      - name: Stop using Raspberry Pi as exit node
+        if: always()
+        run: sudo tailscale set --exit-node= || true
 
-    - name: Deploy
-      uses: JamesIves/github-pages-deploy-action@4.1.1
-      with:
-        branch: 'gh-pages'
-        folder: './build/'
-        target-folder: './'
+      # スクレイピングに失敗し、ヘッダーだけのJSONになった場合は公開しない
+      - name: Validate scraped data
+        run: |
+          python - <<'PYCODE'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('data.json').read_text(encoding='utf-8'))
+          values = data.get('values')
+          if not isinstance(values, list) or len(values) < 2:
+              raise SystemExit('ERROR: data.json has no store rows. Skip publishing.')
+          print(f'Scraped {len(values) - 1} stores.')
+          PYCODE
+
+      - name: Set Last Update
+        id: set_last_update
+        shell: bash
+        run: |
+          last_update=$(python update.py)
+          echo "LAST_UPDATE=${last_update}" >> "$GITHUB_ENV"
+
+      - name: Use Last Update
+        run: |
+          echo "Last Update: $LAST_UPDATE"
+
+      - name: Move data.json to public directory
+        run: |
+          mv data.json public/
+          mv src/last_update.json public/
+
+      - name: Commit changes
+        run: |
+          git config --global user.name "${GITHUB_ACTOR}"
+          git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git pull
+          if git diff --quiet; then
+            echo "No changes to commit."
+          else
+            git add public/data.json
+            git commit -m "データを更新 ($LAST_UPDATE)"
+            git push origin master
+          fi
+
+      - run: npm install
+      - run: npm run build -repository=${GITHUB_REPOSITORY}
+
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@4.1.1
+        with:
+          branch: 'gh-pages'
+          folder: './build/'
+          target-folder: './'
