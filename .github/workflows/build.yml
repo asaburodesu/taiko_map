@@ -8,7 +8,7 @@ on:
       - 'master'
   workflow_dispatch:
   schedule:
-    # 毎日7時20分(JST)に実行 (cronはUTC)
+    # 毎日7時20分(JST)
     - cron: '20 22 * * *'
 
 permissions:
@@ -29,44 +29,25 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # GitHub-hosted runnerをTailscaleへ接続
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
-
-      # 通信の出口を変更
-      - name: Use Raspberry Pi as exit node
-        env:
-          PI_IP: ${{ vars.PI_TAILSCALE_IP }}
-        run: |
-          test -n "$PI_IP"
-          sudo tailscale set --exit-node="$PI_IP"
-          # ルートの疎通だけ確認
-          curl -4fsS --max-time 15 https://api.ipify.org > /dev/null
-
-      - name: Run Python via Japan IP
+      - name: Run Python
         run: python taiko_get.py
 
-      # この後のgit / npm / deploy通信はラズパイ経由にしない
-      # Pythonが失敗してもルート設定を元に戻す
-      - name: Stop using Raspberry Pi as exit node
-        if: always()
-        run: sudo tailscale set --exit-node= || true
-
-      # スクレイピングに失敗し、ヘッダーだけのJSONになった場合は公開しない
       - name: Validate scraped data
         run: |
           python - <<'PYCODE'
           import json
           from pathlib import Path
 
-          data = json.loads(Path('data.json').read_text(encoding='utf-8'))
+          data = json.loads(
+              Path('data.json').read_text(encoding='utf-8')
+          )
           values = data.get('values')
+
           if not isinstance(values, list) or len(values) < 2:
-              raise SystemExit('ERROR: data.json has no store rows. Skip publishing.')
+              raise SystemExit(
+                  'ERROR: data.json has no store rows.'
+              )
+
           print(f'Scraped {len(values) - 1} stores.')
           PYCODE
 
