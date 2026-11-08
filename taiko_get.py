@@ -6,7 +6,6 @@ import re
 import json
 import time
 
-# 対象サイトへのアクセス用。ラズパイ上で 200 OK を確認したヘッダー。
 SCRAPING_HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Accept": "text/html,application/xhtml+xml",
